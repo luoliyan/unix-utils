@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+
+# Copyright 2018 Joseph Lorimer <joseph@lorimer.me>
+#
+# Permission to use, copy, modify, and distribute this software for any purpose
+# with or without fee is hereby granted, provided that the above copyright
+# notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+# REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+# INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+# LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+# OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+# PERFORMANCE OF THIS SOFTWARE.
+
+from os import chmod, walk, stat
+from os.path import join
+from shutil import chown
+
+from click import argument, command, secho, option
+from magic import from_file as magic
+
+
+@command()
+@argument('perms')
+@option('-d', 'start', default='.', help='Root directory to descend into.')
+@option('-e', is_flag=True, default=False,
+        help='If file is executable, keep owner execute bit.')
+def main(perms, start, e):
+    """Sets user, group and read-write-execute permissions recursively.
+    Permission format is user:group:dirmode:filemode.
+    """
+    user, group, dmode, fmode = perms.split(':')
+    for root, dirs, files in walk(start):
+        for d in dirs:
+            change_owner(join(root, d), user, group)
+            change_mode(join(root, d), dmode)
+        for f in files:
+            p = join(root, f)
+            is_exec = magic(p).find('executable') != -1 if e else False
+            change_owner(p, user, group)
+            change_mode(p, fmode, is_exec)
+
+
+def change_owner(path, user, group):
+    if user or group:
+        try:
+            chown(path, user=user, group=group)
+        except LookupError:
+            secho('Error: user or group does not exist', err=True, fg='red')
+            exit(1)
+
+
+def change_mode(path, new_mode, is_exec=False):
+    cur_mode = int(str(oct(stat(path).st_mode))[-3:], 8)
+    new_mode = int(new_mode, 8)
+
+    if is_exec:
+        exec_set = new_mode & 0o111
+        if not exec_set:
+            new_mode |= 0o100
+
+    if cur_mode != new_mode:
+        secho(
+            '{}: {:o} => {:o}'.format(path, cur_mode, new_mode),
+            err=True,
+            fg='green'
+        )
+        chmod(path, new_mode)
+
+
+if __name__ == '__main__':
+    main()
