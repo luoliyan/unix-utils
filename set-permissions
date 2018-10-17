@@ -15,7 +15,7 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 from os import chmod, walk, stat
-from os.path import join
+from os.path import join, isfile, islink
 from shutil import chown
 
 from click import argument, command, secho, option
@@ -38,6 +38,9 @@ def main(perms, start, e):
             change_mode(join(root, d), dmode)
         for f in files:
             p = join(root, f)
+            if islink(p) and not isfile(p):
+                error('broken symbolic link', p)
+                continue
             is_exec = magic(p).find('executable') != -1 if e else False
             change_owner(p, user, group)
             change_mode(p, fmode, is_exec)
@@ -48,7 +51,7 @@ def change_owner(path, user, group):
         try:
             chown(path, user=user, group=group)
         except LookupError:
-            secho('Error: user or group does not exist', err=True, fg='red')
+            error('user or group does not exist')
             exit(1)
 
 
@@ -68,6 +71,11 @@ def change_mode(path, new_mode, is_exec=False):
             fg='green'
         )
         chmod(path, new_mode)
+
+
+def error(msg, path=None):
+    prefix = '{}: error'.format(path) if path else 'fatal error'
+    secho('{}: {}'.format(prefix, msg), err=True, fg='red')
 
 
 if __name__ == '__main__':
