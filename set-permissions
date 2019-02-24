@@ -53,6 +53,9 @@ def change_owner(path, user, group):
         except LookupError:
             error('user or group does not exist')
             exit(1)
+        except PermissionError:
+            error('permission denied: %s' % path)
+            exit(1)
 
 
 def change_mode(path, new_mode, is_exec=False):
