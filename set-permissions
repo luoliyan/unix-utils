@@ -14,11 +14,11 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-from os import chmod, walk, stat
-from os.path import join, isfile, islink
+from os import W_OK, access, chmod, stat, walk
+from os.path import isfile, islink, join
 from shutil import chown
 
-from click import argument, command, secho, option
+from click import argument, command, option, secho
 from magic import from_file as magic
 
 
@@ -34,10 +34,15 @@ def main(perms, start, e):
     user, group, dmode, fmode = perms.split(':')
     for root, dirs, files in walk(start):
         for d in dirs:
-            change_owner(join(root, d), user, group)
-            change_mode(join(root, d), dmode)
+            p = join(root, d)
+            if no_access(p):
+                continue
+            change_owner(p, user, group)
+            change_mode(p, dmode)
         for f in files:
             p = join(root, f)
+            if no_access(p):
+                continue
             if islink(p) and not isfile(p):
                 error('broken symbolic link', p)
                 continue
@@ -46,16 +51,21 @@ def main(perms, start, e):
             change_mode(p, fmode, is_exec)
 
 
+def no_access(path):
+    if not access(path, W_OK):
+        warn('no write access', path)
+        return True
+    return False
+
+
 def change_owner(path, user, group):
     if user or group:
         try:
             chown(path, user=user, group=group)
         except LookupError:
             error('user or group does not exist')
-            exit(1)
-        except PermissionError:
-            error('permission denied: %s' % path)
-            exit(1)
+        except OSError as e:
+            warn(e.strerror.lower(), e.filename)
 
 
 def change_mode(path, new_mode, is_exec=False):
@@ -79,6 +89,11 @@ def change_mode(path, new_mode, is_exec=False):
 def error(msg, path=None):
     prefix = '{}: error'.format(path) if path else 'fatal error'
     secho('{}: {}'.format(prefix, msg), err=True, fg='red')
+    exit(1)
+
+def warn(msg, path):
+    prefix = '{}: warning'.format(path)
+    secho('{}: {}'.format(prefix, msg), err=True, fg='yellow')
 
 
 if __name__ == '__main__':
