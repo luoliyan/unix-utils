@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# Copyright 2019 Joseph Lorimer <joseph@lorimer.me>
+#
+# Permission to use, copy, modify, and distribute this software for any purpose
+# with or without fee is hereby granted, provided that the above copyright
+# notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+# REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+# INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+# LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+# OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+# PERFORMANCE OF THIS SOFTWARE.
+
+run() {
+    echo "$res" | xargs -n 1 gpart bootcode -p /boot/boot1.efifat -i 1
+}
+
+res=$(
+    geom eli status |
+    grep ada        |
+    awk '{sub(/p[0-9].*/, "")}; 1'
+)
+
+a=$(echo "$res" | xargs gpart show)
+b=$(echo "$res" | xargs -n1 echo "gpart bootcode -p /boot/boot1.efifat -i 1")
+msg=$(printf "%s\n\nCommands to execute:\n\n%s\n\nProceed?" "$a" "$b")
+
+dialog --no-collapse --yesno "$msg" 30 60
+case $? in
+  0) run;;
+  1) echo "Abort";;
+esac
