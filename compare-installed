@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright 2018 Joseph Lorimer <joseph@lorimer.me>
+# Copyright 2018-2019 Joseph Lorimer <joseph@lorimer.me>
 #
 # Permission to use, copy, modify, and distribute this software for any purpose
 # with or without fee is hereby granted, provided that the above copyright
@@ -14,11 +14,20 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-from re import search
+from re import search, sub
 from subprocess import check_output
+from typing import List
 
 from click import argument, command
+from colorama import Back, Fore, Style, init
 from tabulate import tabulate
+
+init()
+
+DEP_SEP = ', '
+ELIPSIS = '...'
+MAX_WIDTH = 180
+PADDING = 8
 
 
 @command()
@@ -28,15 +37,63 @@ def main(package_list):
     Accepts lists that contain one package per line in port origin format
     (e.g. www/firefox).
     """
-    def clean(output):
-        return output.decode('utf-8').lower().strip().split('\n')
 
-    names = clean(check_output(['pkg', 'prime-list']))
-    origins = clean(check_output(['pkg', 'prime-origins']))
+    names = call(['pkg', 'prime-list'])
+    origins = call(['pkg', 'prime-origins'])
+    n_max = max(map(len, names))
+    o_max = max(map(len, origins))
+    dep_limit = MAX_WIDTH - PADDING - n_max - o_max
+
+    data = [('', '=' * n_max, '=' * o_max, '=' * o_max, '')]
+    headers = [
+        Back.YELLOW + Fore.BLACK,
+        'Name',
+        'Origin',
+        'Dependencies',
+        Style.RESET_ALL,
+    ]
+
     with open(package_list, encoding='utf-8') as f:
         primes = f.read()
-    data = [(n, o) for (n, o) in zip(names, origins) if not search(o, primes)]
-    print(tabulate(data))
+
+    i = 0
+    for n, o in zip(names, origins):
+        if not search(o, primes):
+            deps = get_deps(n, o, dep_limit)
+            if i % 2 == 0:
+                color = Back.BLUE + Fore.WHITE
+            else:
+                color = Fore.WHITE
+            data.append((color, n, o, deps, Style.RESET_ALL))
+            i += 1
+
+    print(tabulate(data, headers=headers, tablefmt='plain'))
+
+
+def get_deps(n: str, o: str, limit: int) -> str:
+    deps = sorted(
+        sub('-[0-9.,_]+$', '', d.strip())
+        for d in call(['pkg', 'info', '--required-by', o])
+        if d.startswith('\t')
+    )
+    cur_len = 0
+    keep: List[str] = []
+    while deps:
+        d = deps.pop(0)
+        cur_len += len(d)
+        if (
+            cur_len + len(DEP_SEP) * len(keep) + len(DEP_SEP) + len(ELIPSIS)
+            >= limit
+        ):
+            break
+        keep.append(d)
+    if deps:
+        keep.append(ELIPSIS)
+    return DEP_SEP.join(keep)
+
+
+def call(args: List[str]) -> List[str]:
+    return check_output(args).decode('utf-8').lower().strip().split('\n')
 
 
 if __name__ == '__main__':
