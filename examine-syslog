@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+
+# Copyright 2019 Joseph Lorimer <joseph@lorimer.me>
+#
+# Permission to use, copy, modify, and distribute this software for any purpose
+# with or without fee is hereby granted, provided that the above copyright
+# notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+# REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+# INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+# LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+# OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+# PERFORMANCE OF THIS SOFTWARE.
+
+from collections import defaultdict
+from operator import itemgetter
+from re import compile, split, sub
+from statistics import mean
+from subprocess import check_output
+
+from dateparser import parse
+from tabulate import tabulate
+
+LOG_PATH = '/var/log/messages'
+FIRST_LINE = 'syslogd: kernel boot file is /boot/kernel/kernel'
+
+
+def get_hostname():
+    return (
+        check_output(['sysctl', 'kern.hostname'])
+        .decode('utf-8')
+        .split(':')[1]
+        .strip()
+    )
+
+
+def get_times(hostname, exclude=[]):
+    regex = compile('({})'.format('|'.join(exclude)))
+    times = defaultdict(list)
+    with open(LOG_PATH, encoding='utf-8') as log:
+        prev = None
+        for line in log:
+            if line.count(hostname) != 1:
+                continue
+            timestamp, desc = split(hostname, line)
+            desc = sub(r'\[[0-9]+\]', '', desc.strip())
+            if line.find(FIRST_LINE) != -1 or regex.match(desc):
+                prev = None
+                continue
+            if prev:
+                prev_timestamp, prev_desc = prev
+                seconds = int(
+                    (parse(timestamp) - prev_timestamp).total_seconds()
+                )
+                times[desc].append(seconds)
+            prev = (parse(timestamp), desc)
+    return times
+
+
+def show(times, max_width=79):
+    data = []
+    for desc in times:
+        seconds = int(mean(times[desc]))
+        if seconds > 1:
+            data.append((seconds, desc[:max_width]))
+        data.sort(key=itemgetter(0), reverse=True)
+    print(tabulate(data, tablefmt='fancy_grid'))
+
+
+if __name__ == '__main__':
+    show(get_times(get_hostname(), ['pkg']))
