@@ -14,8 +14,8 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-from re import search, sub
-from subprocess import check_output
+from re import escape, search, sub
+from subprocess import CalledProcessError, check_output
 from typing import List
 
 from click import argument, command
@@ -58,7 +58,7 @@ def main(package_list):
 
     i = 0
     for n, o in zip(names, origins):
-        if not search(o, primes):
+        if not search(escape(o), primes):
             deps = get_deps(n, o, dep_limit)
             if i % 2 == 0:
                 color = Back.BLUE + Fore.WHITE
@@ -93,7 +93,10 @@ def get_deps(n: str, o: str, limit: int) -> str:
 
 
 def call(args: List[str]) -> List[str]:
-    return check_output(args).decode('utf-8').lower().strip().split('\n')
+    try:
+        return check_output(args).decode('utf-8').lower().strip().split('\n')
+    except CalledProcessError as e:
+        return []
 
 
 if __name__ == '__main__':
